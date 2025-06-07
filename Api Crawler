@@ -1,0 +1,73 @@
+import requests
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import simpleSplit
+
+def draw_wrapped_text(c, text, x, y, max_width, font_name="Helvetica", font_size=10, line_spacing=14):
+    lines = simpleSplit(text, font_name, font_size, max_width)
+    for line in lines:
+        c.drawString(x, y, line)
+        y -= line_spacing
+    return y
+
+search_term = input("Search the regulations : ")
+
+url = "https://www.federalregister.gov/api/v1/documents.json"
+params = {
+    "per_page": 5,
+    "order": "newest",
+    "conditions[term]": search_term,
+}
+
+response = requests.get(url, params=params)
+
+if response.status_code == 200:
+    data = response.json()
+
+    c = canvas.Canvas("info.pdf", pagesize=letter)
+    width, height = letter
+    margin = 50
+    max_width = width - 2 * margin
+
+    for item in data["results"]:
+        y = height - margin
+
+        title = item.get("title", "[No title]")
+        date = item.get("publication_date", "[No date]")
+        doc_num = item.get("document_number", "[No doc number]")
+        doc_type = item.get("type", "[No type]")
+        agencies = ", ".join(agency.get("name", "") for agency in item.get("agencies", [])) or "[No agency info]"
+        url_link = item.get("html_url", "[No URL]")
+
+        summary = item.get("summary") or item.get("abstract") or ""
+        if not summary:
+            document = item.get("document", "")
+            summary = document[:500] + "..." if len(document) > 500 else document
+
+        c.setFont("Helvetica-Bold", 12)
+        y = draw_wrapped_text(c, f"Title: {title}", margin, y, max_width, "Helvetica-Bold", 12, 16)
+        y -= 10
+
+        c.setFont("Helvetica", 10)
+        y = draw_wrapped_text(c, f"Date: {date} | Type: {doc_type} | Doc #: {doc_num}", margin, y, max_width)
+        y -= 10
+
+        y = draw_wrapped_text(c, f"Agencies: {agencies}", margin, y, max_width)
+        y -= 10
+
+        y = draw_wrapped_text(c, f"Summary: {summary}", margin, y, max_width, line_spacing=16)
+        y -= 15
+
+        c.setFillColorRGB(0, 0, 1)
+        y = draw_wrapped_text(c, f"URL: {url_link}", margin, y, max_width)
+        c.setFillColorRGB(0, 0, 0)
+        y -= 30
+
+        c.showPage()
+
+    c.save()
+    print("PDF saved as federal_register_brief_info.pdf")
+
+else:
+    print("Error:", response.status_code)
+c
